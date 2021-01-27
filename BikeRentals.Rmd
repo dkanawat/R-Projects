@@ -1,0 +1,357 @@
+---
+title: "Fundamental Analysis of Bike Rentals"
+author: "Divyani Kanawat"
+date: "3/20/2020"
+output:
+    html_document:
+                code_folding: hide
+                toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(DataExplorer); library(corrplot); library(ggplot2); library(forcats); library(ade4); library(caret); library(tinytex); library(dplyr)
+```
+
+# Introduction
+
+## Background - 
+Bike sharing systems are new generation of traditional bike rentals where whole process from membership, rental and return has been automated. Through these systems, user can easily rent a bike from one position and return back at another position. Today, there exists great interest in these systems due to their important role in traffic, environmental and health issues.
+
+## Dataset Description 
+The dataset contains the daily count of rental bikes between years 2011 and 2012 in Capital bikeshare system with the corresponding weather and seasonal information. Dataset includes weather attributes like temperature, humidity, windspeed as well as seasonal attributes like season, month, weekday or working day etc. Number of Observation: 731, Number of attributes: 16, Response variable – Count of Daily bike rentals 
+
+## Variable Names
+"instant" "dteday" "season" "yr" "mnth" "holiday" "weekday" "workingday" "weathersit" "temp" "atemp" "hum" "windspeed" "casual" "registered" "cnt"
+
+## Goal 
+we will try to determine the factors that influence the total number of bike rentals on any particular day. Or in other words, what are the factors that influence number of bike rentals on a day?
+
+# Exploratory Data Analysis
+First, we checked the data for missing values and found that there is no missing data in our dataset.
+
+## Read the data file and setting names that convey apt description
+```{r, message=FALSE, warning=FALSE}
+download.file("https://archive.ics.uci.edu/ml/machine-learning-databases/00275/Bike-Sharing-Dataset.zip","Bike.zip") 
+day <- read.table(unz("Bike.zip", "day.csv"), header=T, quote="\"", sep=",")
+
+#Variable type Identification
+str(day)
+
+#standardise the temp and atemp values which were normalized in the dataset.
+day$temp<- day$temp*41 
+day$atemp<- day$atemp*50
+day$hum<- day$hum*100
+day$windspeed<-day$windspeed*67
+
+#Find missing values in data if any. 
+table(is.na(day))
+```
+
+## Frequency Distribution
+```{r, message=FALSE, warning=FALSE}
+plot_histogram(day)
+```
+
+Few inferences can be drawn by looking at these histograms: Season has four categories of almost equal distribution. Weather 1 has higher contribution than 2 and 3. Most of the numeric variables are normally distributed.
+
+## Correlation Plot of Bike Sharing Data
+```{r, message=FALSE, warning=FALSE}
+nonums <- unlist(lapply(day, is.numeric))
+nums<-day[,nonums] 
+par(mfrow=c(1,1)) 
+corrplot(cor(nums))
+```
+
+We can say registered and casual variables are highly correlated with target variable because target variables is sum of these two variable. Temp, atemp, humidity, windspeed can be good predictors. Humidity and windspeed have negative correlation with counts. Variables “temp” and “atemp” show high positive correlation (0.99) and hence both can’t be used for the analysis due to assumption of singularity. It means that actual temperature and feels like temperature change together in same direction
+
+## Daily weather conditions influence the daily bike rental count
+```{r, message=FALSE, warning=FALSE}
+par(mfrow=c(2,2))
+
+plot(day$cnt~day$temp ,type = 'p', col= 'violetred', xlab = 'Temperature', ylab = 'Total Count')
+
+abline(lm(day$cnt~day$temp))
+
+plot(day$cnt~day$atemp ,type = 'p', col= 'royalblue', xlab = 'Feels Like Temp', ylab = 'Total Count')
+
+abline(lm(day$cnt~day$atemp)) 
+
+plot(day$cnt~day$windspeed ,type = 'p', col= 'lightsalmon3', xlab = 'Windspeed', ylab = 'Total Count')
+
+abline(lm(day$cnt~day$windspeed)) 
+
+plot(day$cnt~day$hum ,type = 'p', col= 'darkslategray4', xlab = 'Humidity', ylab = 'Total Count')
+
+abline(lm(day$cnt~day$hum))
+
+```
+
+Our dependent variable (count of users) increases with increase in temp and reduces with increase in humidity and windspeed. When we cross-checked this, we found that more people rent bikes on “good” (clear/few clouds) weather days rather than “bad” (heavy rain/fog/thunderstorm) weather days
+
+## Visualizing Categorical Variables
+```{r, message=FALSE, warning=FALSE}
+day$season<- factor(day$season
+                    ,levels = c(1,2,3,4)
+                    ,labels = c("spring", "summer", "fall", "winter")
+)
+
+
+day$weathersit<-factor(day$weather
+                       ,levels = c(3,2,1)
+                       ,labels = c("Bad", "Normal", "Good")
+                       ,ordered = TRUE)
+
+day$holiday<- factor(day$holiday
+                     ,levels = c(0,1)
+                     ,labels = c("noholiday", "holiday")
+)
+
+day$workingday<-factor(day$workingday
+                       ,levels = c(0,1)
+                       ,labels = c("nonworking", "working")
+)
+
+day$weekday<-factor(day$weekday
+                    ,levels = c(0,1,2,3,4,5,6)
+                    ,labels = c("sun", "mon","tue","wed","thur","fri","sat")
+)
+
+##Now we will try and find the relationship between count(independent variable) and categorical dependent variables.
+
+ggplot(day, aes(x = fct_infreq(season), y = cnt, fill = season))+ geom_bar(stat = "identity")+ labs(title = "Bike count vs Season", x = "Season", y = "Count of bikes") + theme(legend.position = "right") 
+
+ggplot(day, aes(x=fct_infreq(weathersit), y=cnt, fill=weathersit)) + geom_bar(stat="identity")+labs(title = "Bike count vs Weather Condition", x = "Weather", y = "Count of bikes") + theme(legend.position = "right")
+
+Avg_Bike_Rental1 <- day %>% group_by(holiday) %>% summarise(mean = mean(cnt)) 
+
+ggplot(Avg_Bike_Rental1, aes(x = holiday, y = mean, fill = holiday))+ geom_bar(stat = "identity")+theme_minimal()+ labs(title = "Average Daily Bike Rentals", x = "Holiday", y = "Count of bikes") + scale_fill_manual(name = "Holiday", labels = c("Noholiday", "Holiday"), values = c("hotpink2", "cyan3"))
+
+Avg_Bike_Rental <- day %>% group_by(workingday) %>% summarise(mean = mean(cnt))
+
+ggplot(Avg_Bike_Rental, aes(x = workingday, y = mean, fill = workingday)) + geom_bar(stat = "identity", position = "dodge")+ labs(title = "Average Daily Bike Rentals", x = "Workingday", y = "Count of bikes") + scale_fill_manual(name = "Workingday", labels = c("Nonworking", "Working"), values = c("hotpink2", "cyan3"))
+```
+
+The above graph shows people like to ride in good weather, least bike users in spring season, working people use more bikes than non working in weekdays. Users tend to rent bike mostly in good weather, moderately in normal weather and least in bad weather. There is small difference in average daily  bike rentals during working days and holidays. 
+
+## Compare casual and registered users with working days
+```{r}
+ggplot(day, aes(x = casual, y = registered, color = workingday))+
+  geom_point()+
+  labs(title = "Relation Between Bike counts(casual& registeres) vs Working, Non working")+
+   scale_color_manual(values=c("deeppink", "turquoise2")) +
+  xlab("Casual Bike Counts") +
+  ylab("Registered Bike Counts")
+```
+
+The graph shows that mostly working people are registered and use bikes mainly on weekdays. On the other hand, mostly non-working people are casual bikers and prefer to ride on weekends and holidays.
+
+## Average user counts by Monthly & Daily
+```{r}
+#Monthly
+boxplot(day$cnt~day$mnth,xlab="mnth", ylab="count of users", col= "violetred4", 
+        main = "Monthly Bike Users")
+
+#Daily
+date=substr(day$dteday,1,10)
+days<-weekdays(as.Date(date))
+day$days=days
+
+par(mfrow=c(1,1))
+boxplot(day$cnt~day$days,xlab="days", ylab="count of users", col = "steelblue4",
+        main = "Daily Bike Users")
+```
+
+Bike trend initially increase  and then decrease during the month and shows a sign of cyclical behavior. Bike rentals have increasing pattern through Spring and reach a pick in the Summer and fall starting. Then rentals decreasing in end fall and winter to meet the trend of spring.
+
+Time to move to the next step, Data Manipulation . In this process we will try to change and adjust few data values to make data more sense absed on our EDA and prior knowledge of the subject
+
+# Data Manipulation and Preparation
+
+Once we completed our EDA and had a fair understanding of the data, we went ahead to manipulate the data to make it ready for modelling. We:
+• changed categorical variables to dummy variables using one-hot encoding
+• dropped columns – instant (simply count of rows), dteday (date of row), casual (number of casual rentals on a day), registered (number of registered rentals on a day), atemp (feels like temperature)
+• transformed months to quarters for easy of modelling
+• bring together all the columns and our final data is ready for modelling
+```{r, message=FALSE, warning=FALSE}
+#Lets remove variables which are not important. 
+
+day$instant<-NULL
+day$dteday<- NULL
+day$casual<-NULL
+day$registered<- NULL
+
+#We removed casual, registered, dteday, and instrant from data to do linear
+#regression. casual and registered included in cnt and dteday is not a single independent variable.
+
+##Transform Month into quarters for dummy variables
+
+day$Quarter <- ceiling(as.numeric(day$mnth) / 3)
+day$Quarter<- factor(day$Quarter)
+day$mnth = NULL
+
+##Transform workingday and holiday as numeric variable because they have 0,1 value and we don't need dummy variable for these two variables.
+
+day$holiday<- as.numeric(day$holiday)
+day$workingday<- as.numeric(day$workingday)
+
+#Here we will create dummy variables for factor variables
+
+factor_variables <- sapply(day,is.factor)
+day_factor <- day[,factor_variables]
+
+factor.names <- names(day_factor)
+day_factor <- as.data.frame(day_factor)
+day_factor <- acm.disjonctif(day_factor)
+
+#Now we will merge this data with our original data
+day <- day[,-which(names(day) %in% factor.names)]
+
+day <- cbind(day,day_factor)
+
+rm(day_factor,factor_variables,factor.names)
+
+nums <- unlist(lapply(day, is.numeric))  
+day<-day[,nums]
+
+day$cnt<- as.numeric(day$cnt)
+day$yr<- as.factor(day$yr)
+
+##Again we will transform holiday and workingday as factor for modeling
+
+day$holiday<- as.factor(day$holiday)
+day$workingday<- as.factor(day$workingday)
+```
+
+# Check the Assumptions
+
+Before building models, we checked assumptions for linear regression namely
+• normality
+• linearity
+• additivity
+• homogeneity/homoscedasticity
+```{r, message=FALSE, warning=FALSE}
+#1. Linearity
+linear<- lm(cnt~ ., data = day)
+summary(linear)
+#Create standarized residuals and plot linearity 
+standardized = rstudent(linear) 
+qqnorm(standardized) 
+abline(0,1) 
+
+#2 Normality
+
+hist(standardized, breaks = 15)
+mean(linear$residuals)
+
+#3Homogeneity/Homoscedasticity
+fitvalues = scale(linear$fitted.values)
+plot(fitvalues, standardized)
+abline(0,0) 
+abline(v = 0) 
+
+plot(linear, 1)
+```
+
+Results – Our data is nearly normally distributed and passes through other assumptions of linear regression.
+
+# Model Building process
+Split final dataset into train and test dataset
+```{r include=FALSE}
+set.seed(123)
+smp_size <- floor(0.75 * nrow(day))
+train_ind <- sample(seq_len(nrow(day)), size = smp_size)
+
+train <- day[train_ind, ]
+test <- day[-train_ind, ]
+```
+#We selected the multilinear model because our response variable is numeric and we will use more than 2 variables in our model.
+
+##building a model without the  date, casual, registered and instant as the cnt variable includes both casual and registered and the dteday variable is not a independent variable,but consist variable that overlap with variables such as month, working day, holiday
+```{r, message=FALSE, warning=FALSE}
+model1<- lm(cnt ~ temp +atemp+ hum +windspeed, data = train)
+summary(model1)
+prediction<- predict(model1, newdata = train)
+prediction1<- predict(model1, newdata = test)
+R2(prediction, train$cnt)
+R2(prediction1, test$cnt)
+mean((test$cnt- prediction1 )^2)
+RMSE(prediction1, test$cnt)
+AIC(model1)
+BIC(model1)
+
+#model2
+model2<- lm(cnt~ temp+ hum+ windspeed, data= day)
+summary(model2)
+prediction02<- predict(model2, newdata = train)
+prediction2<- predict(model2, newdata = test)
+R2(prediction02, train$cnt)
+R2(prediction2, test$cnt)
+mean((test$cnt - prediction2)^2)
+RMSE(prediction2, test$cnt)
+AIC(model2)
+BIC(model2)
+
+#model3
+model3<- lm(cnt~ .-atemp, data = day) 
+summary(model3)
+
+prediction03<- predict(model3, newdata = train)
+prediction3<- predict(model3, newdata = test)
+R2(prediction03, train$cnt)
+R2(prediction3, test$cnt)
+mean(( test$cnt - prediction3)^2)
+RMSE(prediction3, test$cnt)
+AIC(model3)
+BIC(model3)
+
+#model4
+model4<- lm(cnt~ .- atemp-workingday-weekday.tue-weekday.mon-weekday.fri- weekday.tue-weekday.wed-weekday.thur-weekday.sat, data = train)
+summary(model4)
+
+prediction04<- predict(model4, newdata = train)
+prediction4<- predict(model4, newdata = test)
+R2(prediction04, train$cnt)
+R2(prediction4, test$cnt)
+mean(( test$cnt - prediction4 )^2)
+RMSE(prediction4, test$cnt)
+AIC(model4)
+BIC(model4)
+
+```
+
+# Interpretation of Models
+First model shows that humidity and windspeed are good predictor with p value < 0.05 and adjusted R2 0.44.Temperature and feels like temperature show multicollinearity because they are highly correlated.
+
+To avoid multicollinearity, we removed feels like temperature in our model 2 and got results better from 1st model with adjusted R2 0.45 . To get better prediction, we try other variables in our next model.
+
+Third model includes all variables except feels like temperature and this model fit well with accounts for 82% of the variance. But this has RSE 808 with 19 variables and few variables are not significant. So, we will run model 4 to remove variables which are not significant.
+
+We run one more model to reduce variable number and this model also fit very well with adjusted R2 of 0.84 which means 84% of the variance can be explained by this model4. All variables are significant with < 0.05 p value. Model has lower AIC and BIC than other models and lower indicates a more parsimonious model, relative to a model fit with a higher AIC. So, based on these results we will select Model 4.
+
+# The Best Model
+```{r, message=FALSE, warning=FALSE}
+plot(model4, col = "gold")
+```
+
+We built multiple linear regressions with putting all variables against response variable and removed insignificant predictor variables from earlier models. The best fit model achieved 0.84 adjusted R-squared, which indicates a good fit. Also, p value for almost all predictor variables are significant. Though, checking the residual plot and QQ plot, we can see that residuals have n0 pattern and are normally distributed, and residual plot shows slightly curve but close to straight line, which means the model fit the data well.
+
+# Prediction
+```{r, message=FALSE, warning=FALSE}
+par(mfrow= c(1,1)) 
+model4_step<- step(model4)
+plot(test$cnt, main = "Linear Model", ylab = "Test Set Rental Count", pch = 20)
+points(predict(model4_step, newdata = test), col = "red", pch = 20)
+```
+
+When we plot the prediction of best fit model (model 4) on test dataset against the true values, the graph shows that the spread of the response variable is similar to multilinear model. Still, we cannot depend on this because we worked on a small data and this dataset does not contain other variables such as daily hours and bike stations, which can help more in accuracy.
+
+# Conclusion
+“An ideal day for highest bike rentals would be a warm working day in summer/fall with low humidity and slow wind”
+We can conclude that count of bike rentals on a day is dependent of a number of factors – both seasonal and weather related.
+● How well can you predict your response variable?
+Our model is a good fit and can predict response variable with good accuracy as we can see above in the graph of actual test data against the prediction
+● What are the caveats to your analysis?
+We did not incorporate company’s growth plans in our analysis. We could see that bike rentals increased from 2011 to 2012 over same time period. So using our model to predict for future won’t be right as it does not incorporate company’s expansion plans.
+● Does this data set lack information that you would have liked to use?
+We did not have hour wise data which could have validated our finding that working people who are registered users use bike to commute to office. Bike station wise data visibility could also be helpful to improve the model
